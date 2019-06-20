@@ -1,1 +1,1 @@
-from cccn import post_func
+#from cccn import post_func

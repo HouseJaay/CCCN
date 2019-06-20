@@ -10,6 +10,8 @@ from multiprocessing.dummy import Pool as ThreadPool
 from itertools import repeat
 from subprocess import Popen, PIPE
 import time
+import logging
+
 
 def smooth(x, half_len=5,window='flat'):
     """smooth the data using a window with requested size.
@@ -51,7 +53,7 @@ def smooth(x, half_len=5,window='flat'):
     if x.size < window_len:
         raise ValueError("Input vector needs to be bigger than window size.")
 
-    if window_len<3:
+    if window_len < 3:
         return x
 
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
@@ -60,12 +62,13 @@ def smooth(x, half_len=5,window='flat'):
     s=np.r_[x[window_len-1:0:-1],x,x[-1:-window_len:-1]]
     #print(len(s))
     if window == 'flat': #moving average
-        w=np.ones(window_len,'d')
+        w=np.ones(window_len, 'd')
     else:
         w=eval('numpy.'+window+'(window_len)')
 
     y=np.convolve(w/w.sum(),s,mode='valid')
     return  y[half_len:-half_len]
+
 
 def whiten(data, Nfft, delta, f1, f2, f3, f4):
     """This function takes 1-dimensional *data* timeseries array,
@@ -114,10 +117,10 @@ def whiten(data, Nfft, delta, f1, f2, f3, f4):
     
     return FFTRawSign, dom
 
-def transf_hinet(folder,suffix, dt, ch=['U']):
-    global stations
+
+def transf_hinet(folder, suffix, dt, ch):
     freq = 1/dt/2-0.1
-    sacfiles = glob.glob(join(folder,"*."+suffix))
+    sacfiles = glob.glob(join(folder, "*."+suffix))
     stations = [basename(sac).split('.')[0]+"."+basename(sac).split('.')[1] for sac in sacfiles]
     stations = list(set(stations))
     os.putenv("SAC_DISPLAY_COPYRIGHT", '0')
@@ -125,7 +128,8 @@ def transf_hinet(folder,suffix, dt, ch=['U']):
     s = ""
     for sta in stations:
         for cname in ch:
-            sacfiles = glob.glob(join(folder,"%s.%s.%s" % (sta, cname, suffix)))
+            sacfiles = glob.glob(join(folder, "%s.%s.%s" % (sta, cname, suffix)))
+            # print(sacfiles)
             if len(sacfiles) == 1:
                 ismerge = False
                 sacfile = sacfiles[0]
@@ -134,24 +138,24 @@ def transf_hinet(folder,suffix, dt, ch=['U']):
                 sacfile = ""
                 for sac in sacfiles:
                     sacfile += " "+sac
-            resfile = glob.glob(sacfile+"_PZ")[0]
+            # resfile = glob.glob(sacfile+"_PZ")[0]
             s += "r %s\n" % sacfile
-            s += "rmean;rtr\n"
+            s += "rmean\n"
             if ismerge:
                 s += "merge g z o a\n"
             s += "lp c %f\n" % freq
             s += "interp delta %6.3f\n" % dt
-            s += "transfer FROM POLEZERO SUBTYPE %s TO VEL freq 0.05 0.08 2 3\n" % (resfile)
-            s += "rmean;rtr\n"
+            s += "transfer FROM POLEZERO SUBTYPE %s freq 0.05 0.08 16 20\n" % './zland_z.sac_pz'
+            s += "rmean\n"
             s += "ch kstnm %s\n" % sta
-            s += "w %s/%s.BH%s\n" % (folder, sta, cname)
+            s += "w %s/TRANS_%s.%s\n" % (folder, sta, cname)
     s += "q\n"
     p.communicate(s.encode())
 
-def transf(folder, suffix, dt, ch=['Z']):
-    global stations
+
+def transf(folder, suffix, dt, ch):
     freq = 1/dt/2-0.1
-    sacfiles = glob.glob(join(folder,"*.BHZ.*"+suffix))
+    sacfiles = glob.glob(join(folder, "*.%s.*%s" % (ch[0], suffix)))
     stations = [basename(sac).split('.')[6]+"."+basename(sac).split('.')[7]+"."+basename(sac).split('.')[8] for sac in sacfiles]
     stations = list(set(stations))
     stations = [[st.split('.')[0], st.split('.')[1], st.split('.')[2]] for st in stations]
@@ -160,7 +164,7 @@ def transf(folder, suffix, dt, ch=['Z']):
     s = ''
     for sta in stations:
         for cname in ch:
-            sacfiles = glob.glob(join(folder,"*.%s.%s.%s.BH%s.*.%s" % (sta[0], sta[1], sta[2], cname, suffix)))
+            sacfiles = glob.glob(join(folder, "*.%s.%s.%s.%s.*.%s" % (sta[0], sta[1], sta[2], cname, suffix)))
             sacfile = ''
             if len(sacfiles) == 1:
                 ismerge = False
@@ -170,25 +174,31 @@ def transf(folder, suffix, dt, ch=['Z']):
                 for sac in sacfiles:
                     sacfile += " "+sac
             else:
+                logging.info("missing channel: %s.%s.%s.%s" % (sta[0], sta[1], sta[2], cname))
                 continue
             try:
-                resfile = glob.glob(join(folder,"SAC_PZs_%s_%s_BH%s_%s" % (sta[0],sta[1],cname,sta[2])))[0]
-            except:
+                # resfile = glob.glob(join(folder, "SAC_PZs_%s_%s_BH%s_%s" % (sta[0], sta[1], cname, sta[2])))[0]
+                resfile = glob.glob(join(folder, "RESP.%s.%s.%s.%s" % (sta[0], sta[1], sta[2], cname)))[0]
+            except IndexError:
+                logging.info("missing resp file: RESP.%s.%s.%s.%s" % (sta[0], sta[1], sta[2], cname))
                 continue
             s += "r %s\n" % sacfile
-            s += "rmean;rtr\n"
+            s += "rmean\n"
             if ismerge:
                 s += "merge g z o a\n"
             s += "lp c %f\n" % freq
             s += "interp delta %6.3f\n" % dt
-            s += "transfer FROM POLEZERO SUBTYPE %s TO VEL freq 0.005 0.007 4 5\n" % (resfile)
-            s += "rmean;rtr\n"
+            # s += "transfer FROM POLEZERO SUBTYPE %s TO VEL freq 0.005 0.007 4 5\n" % (resfile)
+            s += "transfer FROM evalresp fname %s freq 0.005 0.007 4 5\n" % resfile
+            s += "rmean\n"
             s += "ch kstnm %s\n" % (sta[0]+"."+sta[1])
-            s += "w %s/%s.%s.%s.BH%s\n" % (folder, sta[0], sta[1], sta[2],cname)
+            s += "w %s/TRANS_%s.%s.%s.%s\n" % (folder, sta[0], sta[1], sta[2], cname)
     s += "q\n"
-    p.communicate(s.encode())
+    outs, errs = p.communicate(s.encode())
+    logging.info(outs.decode('utf-8'))
 
-def perwhiten(folder, dt, wlen, cuttime1,  cuttime2, reftime, f1,f2,f3,f4, ch=['Z']):
+
+def perwhiten(folder, dt, wlen, cuttime1,  cuttime2, reftime, f1, f2, f3, f4, ch):
     global fft_all
     nft = int(next_pow_2((cuttime2 - cuttime1)/dt))
     nwlen = int(wlen/dt)
@@ -198,28 +208,30 @@ def perwhiten(folder, dt, wlen, cuttime1,  cuttime2, reftime, f1,f2,f3,f4, ch=['
         scname += cname
     scname += ']'
     try:
-        st = obspy.read(join(folder,"*.BH%s" % scname))
-    except:
+        st = obspy.read(join(folder, "TRANS_*"))
+    except FileNotFoundError:
         print("can not open sacfiles in %s" % folder)
         return fft_all
+    st.detrend()
     for tr in st:
-        #------- cut waveform ------ 
+        # ------- cut waveform ------
         cutbtime = reftime+cuttime1
         cutetime = reftime+cuttime2
         if tr.stats.starttime > cutbtime or tr.stats.endtime < cutetime:
+            logging.info("incomplete data %s" % tr.stats.sac['kstnm'])
             continue
         tr.trim(cutbtime, cutetime)
-        #----------normalize----------
+        # ----------normalize----------
         if wlen == 0:
             tr.data /= np.abs(tr.data)
         elif wlen > 0:
-            tr.data /= smooth(np.abs(tr.data),half_len=nwlen)
+            tr.data /= smooth(np.abs(tr.data), half_len=nwlen)
         else:
             raise ValueError("Half window length must be greater than zero")
-        #tr.write(join(folder,"%s.%s.%s.BHZ.norm" % (tr.stats.network, tr.stats.station, tr.stats.location)), "SAC")
-        #----------- Whiten -----------
-        (tr.data,tr.stats.delta) = whiten(tr.data, nft, dt, f1, f2, f3, f4)
-        #-------write spec to array --------
+        # tr.write(join(folder,"%s.%s.%s.BHZ.norm" % (tr.stats.network, tr.stats.station, tr.stats.location)), "SAC")
+        # ----------- Whiten -----------
+        (tr.data, tr.stats.delta) = whiten(tr.data, nft, dt, f1, f2, f3, f4)
+        # -------write spec to array --------
         fft_all.append(tr)
         '''
         tr1 = tr.copy()
@@ -231,8 +243,9 @@ def perwhiten(folder, dt, wlen, cuttime1,  cuttime2, reftime, f1,f2,f3,f4, ch=['
         '''
     return len(fft_all)
 
+
 def compute_cc(idxij, nts, mid_pos, lag, cor):
-    global fft_all,outpath
+    global fft_all, outpath
     ccf = fftpack.ifft(fft_all[idxij[0]].data*np.conj(fft_all[idxij[1]].data), nts).real
     cor.data = fftpack.ifftshift(ccf)[mid_pos-lag:mid_pos+lag+1]
     cor.stats.station = fft_all[idxij[0]].stats.station
@@ -245,16 +258,17 @@ def compute_cc(idxij, nts, mid_pos, lag, cor):
     cor.stats.sac.b = -lag
     cor.write(join(outpath, "COR_%s.%s_%s.%s.SAC" % 
         (fft_all[idxij[0]].stats.station,fft_all[idxij[0]].stats.channel,
-        fft_all[idxij[1]].stats.station, fft_all[idxij[1]].stats.channel)),"SAC")
+        fft_all[idxij[1]].stats.station, fft_all[idxij[1]].stats.channel)), "SAC")
+
 
 def docc(folder_name, nt, dt, finalcut, reftime, f2,f3, node):
     global fft_all, outpath
     pool = ThreadPool(node)
-    outpath = join(folder_name,"%sto%s_COR" % (str(f2),str(f3)))
+    outpath = join(folder_name, "%sto%s_COR" % (str(f2), str(f3)))
     if not os.path.exists(outpath):
         os.makedirs(outpath)
     ns = len(fft_all)
-    nts = (fft_all[0].stats.npts)
+    nts = fft_all[0].stats.npts
     lag = int(finalcut/dt)
     mid_pos = int(nts/2)
 #   tcorr = np.arange(-nts + 1, nts)
@@ -265,12 +279,12 @@ def docc(folder_name, nt, dt, finalcut, reftime, f2,f3, node):
     sta_pair = []
     idx_lst = []
     for i in np.arange(ns-1):
-        for j in np.arange(i+1,ns):
+        for j in np.arange(i+1, ns):
             if fft_all[i].stats.station == fft_all[j].stats.station:
                 continue
             sta_pair.append("%s.%s_%s.%s" % 
-                (fft_all[i].stats.station,fft_all[i].stats.channel,
-                fft_all[j].stats.station,fft_all[j].stats.channel))
+                (fft_all[i].stats.station, fft_all[i].stats.channel,
+                fft_all[j].stats.station, fft_all[j].stats.channel))
             idx_lst.append([i, j])
     t=time.clock()
     results = pool.starmap(compute_cc, zip(idx_lst, repeat(nts), repeat(mid_pos), repeat(lag), repeat(cor)))
@@ -278,3 +292,21 @@ def docc(folder_name, nt, dt, finalcut, reftime, f2,f3, node):
     pool.close()
     pool.join()
     return sta_pair
+
+
+def inm_stack(stack_path):
+    global outpath
+    if not os.path.exists(stack_path):
+        os.mkdir(stack_path)
+    for spath in glob.glob(join(outpath, 'COR_*.SAC')):
+        sac = os.path.basename(spath)
+        stack_name = join(stack_path, sac)
+        st0 = obspy.read(spath)
+        if os.path.exists(stack_name):
+            st1 = obspy.read(stack_name)
+            st1[0].data += st0[0].data
+            st1[0].write(stack_name, format='SAC')
+        else:
+            st0[0].write(stack_name, format='SAC')
+        os.remove(spath)
+    os.removedirs(outpath)

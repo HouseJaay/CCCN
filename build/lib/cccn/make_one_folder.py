@@ -134,14 +134,14 @@ def transf_hinet(folder,suffix, dt, ch=['U']):
                 sacfile = ""
                 for sac in sacfiles:
                     sacfile += " "+sac
-            resfile = glob.glob(sacfile+"_PZ")[0]
+            #resfile = glob.glob(sacfile+"_PZ")[0]
             s += "r %s\n" % sacfile
             s += "rmean;rtr\n"
             if ismerge:
                 s += "merge g z o a\n"
             s += "lp c %f\n" % freq
             s += "interp delta %6.3f\n" % dt
-            s += "transfer FROM POLEZERO SUBTYPE %s TO VEL freq 0.05 0.08 2 3\n" % (resfile)
+            #s += "transfer FROM POLEZERO SUBTYPE %s TO VEL freq 0.05 0.08 2 3\n" % (resfile)
             s += "rmean;rtr\n"
             s += "ch kstnm %s\n" % sta
             s += "w %s/%s.BH%s\n" % (folder, sta, cname)
